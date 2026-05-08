@@ -1,5 +1,7 @@
 # Mi Colección Pokémon
 
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/meh889/pokemon-collection)
+
 App estática para gestionar tu colección de cartas Pokémon TCG con:
 
 - Carga de cartas con 12 idiomas (Español, Español LATAM, Inglés, Portugués, Francés, Italiano, Alemán, Holandés, Ruso, Chino, Coreano, Indonesio).
