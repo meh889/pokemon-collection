@@ -1,17 +1,31 @@
 {
-  "name": "Mi Colección Pokémon",
-  "short_name": "Pokécol",
-  "description": "Gestor personal de colección Pokémon TCG con simulador de binder",
+  "name": "pokepony",
+  "short_name": "pokepony",
+  "description": "Mi colección Pokémon TCG con simulador de binder",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0f0f1a",
+  "background_color": "#ffffff",
   "theme_color": "#0f0f1a",
   "icons": [
     {
-      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23ef4444'/><path d='M5 50 h90' stroke='%23000' stroke-width='6'/><circle cx='50' cy='50' r='12' fill='%23fff' stroke='%23000' stroke-width='4'/></svg>",
+      "src": "icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
