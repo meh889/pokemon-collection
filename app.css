@@ -316,6 +316,8 @@ main { padding: 14px; max-width: 1280px; margin: 0 auto; }
   padding: 16px;
   overflow-y: auto;
 }
+.modal[hidden] { display: none; }
+[hidden] { display: none !important; }
 .modal-content {
   background: var(--bg-2);
   border: 1px solid var(--border);
