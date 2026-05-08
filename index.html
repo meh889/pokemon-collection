@@ -175,9 +175,23 @@
       </div>
 
       <div class="form-group">
-        <label>URL de la imagen</label>
-        <input type="url" id="cardImage" placeholder="https://..." />
-        <small class="hint-inline">Tip: usá <a href="https://images.pokemontcg.io" target="_blank" rel="noopener">images.pokemontcg.io</a> o pegá cualquier URL.</small>
+        <label>Imagen</label>
+        <div class="image-input">
+          <div class="image-preview" id="imagePreview">
+            <button type="button" class="upload-cta" id="btnUploadImg">
+              <span class="icon">📷</span>
+              <span>Tocar para subir foto</span>
+              <span class="sub">o sacarla con la cámara</span>
+            </button>
+            <img id="imagePreviewImg" alt="" hidden />
+            <button type="button" class="remove-img" id="btnRemoveImg" hidden title="Quitar imagen">✕</button>
+          </div>
+          <input type="file" id="cardImageFile" accept="image/*" hidden />
+          <details class="url-fallback">
+            <summary>o pegar URL</summary>
+            <input type="url" id="cardImage" placeholder="https://..." />
+          </details>
+        </div>
       </div>
 
       <div class="form-group">

@@ -59,7 +59,55 @@ function loadState() {
   }
 }
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    return true;
+  } catch (e) {
+    if (e.name === "QuotaExceededError" || /quota/i.test(e.message)) {
+      toast("Sin espacio. Hacé export de backup, borrá cartas viejas y volvé a importar.", "error");
+    } else {
+      toast("Error al guardar: " + e.message, "error");
+    }
+    return false;
+  }
+}
+
+function storageUsageMB() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY) || "";
+    return (raw.length * 2) / (1024 * 1024); // UTF-16
+  } catch { return 0; }
+}
+
+/* ============== IMAGE RESIZE ============== */
+function resizeImage(file, maxW = 700, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("No es una imagen"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Imagen inválida"));
+      img.onload = () => {
+        const scale = Math.min(1, maxW / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const out = canvas.toDataURL("image/jpeg", quality);
+        resolve(out);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 /* ============== HELPERS ============== */
@@ -200,11 +248,14 @@ function renderCollection() {
   all.forEach(c => { byLang[c.language] = (byLang[c.language] || 0) + (c.quantity || 1); });
   const assigned = Object.keys(state.binder.slots).length;
 
+  const usage = storageUsageMB();
+  const usageStr = usage < 1 ? `${Math.round(usage * 1024)} KB` : `${usage.toFixed(1)} MB`;
   $("#collectionStats").innerHTML = `
     <div class="stat">Únicas: <b>${all.length}</b></div>
     <div class="stat">Total: <b>${totalCards}</b></div>
     <div class="stat">En binder: <b>${assigned}</b></div>
     <div class="stat">Idiomas: <b>${Object.keys(byLang).length}</b></div>
+    <div class="stat" title="Uso de localStorage (máximo aprox. 5 MB)">Storage: <b>${usageStr}</b></div>
   `;
 
   if (all.length === 0) {
@@ -329,6 +380,54 @@ function bindModal() {
   $("#cardModal").addEventListener("click", (e) => {
     if (e.target.id === "cardModal") closeCardModal();
   });
+  // Image upload
+  $("#btnUploadImg").addEventListener("click", () => $("#cardImageFile").click());
+  $("#imagePreview").addEventListener("click", (e) => {
+    // Click anywhere on preview area also opens picker (when no img yet)
+    if (e.target.id === "imagePreview" && !currentImageSrc) $("#cardImageFile").click();
+  });
+  $("#cardImageFile").addEventListener("change", onImageFileSelected);
+  $("#btnRemoveImg").addEventListener("click", clearImage);
+  $("#cardImage").addEventListener("input", () => {
+    const v = $("#cardImage").value.trim();
+    if (v) setImage(v);
+  });
+}
+
+let currentImageSrc = "";
+
+async function onImageFileSelected(e) {
+  const file = e.target.files[0];
+  e.target.value = ""; // allow re-selecting same file
+  if (!file) return;
+  toast("Procesando imagen…");
+  try {
+    const dataUrl = await resizeImage(file);
+    setImage(dataUrl);
+    const kb = Math.round(dataUrl.length * 0.75 / 1024); // base64 ~33% overhead
+    toast(`Imagen lista (~${kb} KB)`, "success");
+  } catch (err) {
+    toast("Error: " + err.message, "error");
+  }
+}
+
+function setImage(src) {
+  currentImageSrc = src;
+  const img = $("#imagePreviewImg");
+  img.src = src;
+  img.hidden = false;
+  $("#btnUploadImg").hidden = true;
+  $("#btnRemoveImg").hidden = false;
+}
+
+function clearImage() {
+  currentImageSrc = "";
+  const img = $("#imagePreviewImg");
+  img.removeAttribute("src");
+  img.hidden = true;
+  $("#btnUploadImg").hidden = false;
+  $("#btnRemoveImg").hidden = true;
+  $("#cardImage").value = "";
 }
 
 function openCardModal({ editId = null, list = null } = {}) {
@@ -339,6 +438,7 @@ function openCardModal({ editId = null, list = null } = {}) {
   $("#cardLanguage").value = "es";
   $("#cardCondition").value = "NM";
   $("#cardQuantity").value = "1";
+  clearImage();
   document.querySelector('input[name="saveTarget"][value="collection"]').checked = true;
 
   if (editId) {
@@ -353,8 +453,12 @@ function openCardModal({ editId = null, list = null } = {}) {
     $("#cardLanguage").value = c.language || "es";
     $("#cardCondition").value = c.condition || "NM";
     $("#cardQuantity").value = c.quantity || 1;
-    $("#cardImage").value = c.image || "";
     $("#cardNotes").value = c.notes || "";
+    if (c.image) {
+      setImage(c.image);
+      // If it's a URL (not data:), surface in URL field too
+      if (!c.image.startsWith("data:")) $("#cardImage").value = c.image;
+    }
     document.querySelector(`input[name="saveTarget"][value="${c.list}"]`).checked = true;
   } else {
     $("#modalTitle").textContent = "Agregar carta";
@@ -370,6 +474,8 @@ function closeCardModal() { $("#cardModal").hidden = true; }
 function onSaveCard(e) {
   e.preventDefault();
   const id = $("#cardId").value;
+  // Image source: prioridad data URL del upload > URL pegada
+  const image = currentImageSrc || $("#cardImage").value.trim();
   const data = {
     name:      $("#cardName").value.trim(),
     number:    $("#cardNumber").value.trim(),
@@ -378,22 +484,26 @@ function onSaveCard(e) {
     language:  $("#cardLanguage").value,
     condition: $("#cardCondition").value,
     quantity:  parseInt($("#cardQuantity").value, 10) || 1,
-    image:     $("#cardImage").value.trim(),
+    image:     image,
     notes:     $("#cardNotes").value.trim(),
     list:      document.querySelector('input[name="saveTarget"]:checked').value,
   };
 
   if (!data.name) { toast("El nombre es obligatorio", "error"); return; }
 
+  // Snapshot prev state in case quota fails
+  const snapshot = JSON.stringify(state);
   if (id) {
     const c = state.cards.find(x => x.id === id);
     Object.assign(c, data);
-    toast("Carta actualizada", "success");
   } else {
     state.cards.push({ id: uid(), createdAt: Date.now(), ...data });
-    toast(`"${data.name}" agregada a ${data.list === "collection" ? "colección" : "búsquedas"} ✨`, "success");
   }
-  saveState();
+  if (!saveState()) {
+    state = JSON.parse(snapshot); // revert
+    return;
+  }
+  toast(id ? "Carta actualizada" : `"${data.name}" agregada ✨`, "success");
   closeCardModal();
   renderAll();
 }
