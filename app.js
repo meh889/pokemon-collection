@@ -3,7 +3,10 @@
    Persistencia en localStorage, sin backend.
    ============================================================ */
 
-const STORAGE_KEY = "pokemon-collection-v1";
+const STORAGE_KEY = "pokemon-collection-v1"; // legacy localStorage key (for migration)
+const IDB_NAME = "pokemon-collection";
+const IDB_STORE = "kv";
+const IDB_KEY = "state";
 
 const LANGUAGES = [
   { code: "es",    name: "Español",                 flag: "🇪🇸" },
@@ -42,41 +45,95 @@ const defaultState = () => ({
   },
 });
 
-let state = loadState();
+let state = defaultState();
+let storageInfoCache = { usage: 0, quota: 0 };
 
-function loadState() {
+/* ============== INDEXEDDB STORAGE ============== */
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbGet(key) {
+  return openDb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  }));
+}
+function idbSet(key, value) {
+  return openDb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    const req = tx.objectStore(IDB_STORE).put(value, key);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  }));
+}
+
+async function loadState() {
+  // Try IDB first
+  try {
+    const stored = await idbGet(IDB_KEY);
+    if (stored) return mergeDefaults(stored);
+  } catch (e) {
+    console.warn("IDB read failed", e);
+  }
+  // Fallback: migrate from old localStorage if present
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultState();
-    const parsed = JSON.parse(raw);
-    return { ...defaultState(), ...parsed,
-      binder: { ...defaultState().binder, ...(parsed.binder || {}) },
-      ui: { ...defaultState().ui, ...(parsed.ui || {}) },
-    };
-  } catch (e) {
-    console.warn("Storage corrupted, resetting", e);
-    return defaultState();
-  }
-}
-function saveState() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    return true;
-  } catch (e) {
-    if (e.name === "QuotaExceededError" || /quota/i.test(e.message)) {
-      toast("Sin espacio. Hacé export de backup, borrá cartas viejas y volvé a importar.", "error");
-    } else {
-      toast("Error al guardar: " + e.message, "error");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const migrated = mergeDefaults(parsed);
+      await idbSet(IDB_KEY, migrated).catch(() => {});
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
+      toast("Migrado a IndexedDB ✅", "success");
+      return migrated;
     }
-    return false;
-  }
+  } catch (e) { console.warn("Migration failed", e); }
+  return defaultState();
 }
 
-function storageUsageMB() {
+function mergeDefaults(parsed) {
+  return { ...defaultState(), ...parsed,
+    binder: { ...defaultState().binder, ...(parsed.binder || {}) },
+    ui:     { ...defaultState().ui,     ...(parsed.ui || {}) },
+  };
+}
+
+let saveTimer = null;
+function saveState() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    idbSet(IDB_KEY, state)
+      .then(() => refreshStorageInfo())
+      .catch(e => {
+        if (e?.name === "QuotaExceededError") {
+          toast("Sin espacio en IndexedDB. Liberá storage del navegador o exportá un backup.", "error");
+        } else {
+          toast("Error al guardar: " + (e?.message || e), "error");
+        }
+      });
+  }, 80); // debounce
+  return true;
+}
+
+async function refreshStorageInfo() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY) || "";
-    return (raw.length * 2) / (1024 * 1024); // UTF-16
-  } catch { return 0; }
+    if (navigator.storage?.estimate) {
+      const { usage = 0, quota = 0 } = await navigator.storage.estimate();
+      storageInfoCache = { usage, quota };
+    }
+  } catch {}
+}
+function storageInfoStr() {
+  const { usage, quota } = storageInfoCache;
+  const fmt = (b) => b < 1024 * 1024 ? `${Math.round(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
+  if (!quota) return fmt(usage || 0);
+  return `${fmt(usage)} / ${fmt(quota)}`;
 }
 
 /* ============== IMAGE RESIZE ============== */
@@ -134,7 +191,7 @@ function totalSlots(cfg) { return cfg.cols * cfg.rows * cfg.sheets * 2; }
 function slotKey(page, side, slot) { return `${page}-${side}-${slot}`; }
 
 /* ============== INIT ============== */
-function init() {
+async function init() {
   populateLanguages();
   bindHeader();
   bindTabs();
@@ -144,6 +201,11 @@ function init() {
   bindModal();
   bindPicker();
 
+  // Ask the browser to keep our data through storage pressure
+  if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+
+  state = await loadState();
+  await refreshStorageInfo();
   renderAll();
 }
 
@@ -248,14 +310,12 @@ function renderCollection() {
   all.forEach(c => { byLang[c.language] = (byLang[c.language] || 0) + (c.quantity || 1); });
   const assigned = Object.keys(state.binder.slots).length;
 
-  const usage = storageUsageMB();
-  const usageStr = usage < 1 ? `${Math.round(usage * 1024)} KB` : `${usage.toFixed(1)} MB`;
   $("#collectionStats").innerHTML = `
     <div class="stat">Únicas: <b>${all.length}</b></div>
     <div class="stat">Total: <b>${totalCards}</b></div>
     <div class="stat">En binder: <b>${assigned}</b></div>
     <div class="stat">Idiomas: <b>${Object.keys(byLang).length}</b></div>
-    <div class="stat" title="Uso de localStorage (máximo aprox. 5 MB)">Storage: <b>${usageStr}</b></div>
+    <div class="stat" title="Uso de IndexedDB / cuota del navegador">Storage: <b>${storageInfoStr()}</b></div>
   `;
 
   if (all.length === 0) {
