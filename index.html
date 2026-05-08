@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#0f0f1a" />
+<title>Mi Colección Pokémon</title>
+<link rel="stylesheet" href="app.css" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23ef4444'/%3E%3Cpath d='M5 50 h90' stroke='%23000' stroke-width='6'/%3E%3Ccircle cx='50' cy='50' r='12' fill='%23fff' stroke='%23000' stroke-width='4'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <div class="pokeball"></div>
+    <h1>Mi Colección</h1>
+  </div>
+  <div class="header-actions">
+    <button class="btn primary" id="btnAddCard">+ Agregar carta</button>
+    <button class="btn ghost" id="btnExport" title="Exportar JSON">⬇</button>
+    <button class="btn ghost" id="btnImport" title="Importar JSON">⬆</button>
+    <input type="file" id="fileImport" accept="application/json" hidden />
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="collection">Colección <span class="badge" id="countCollection">0</span></button>
+  <button class="tab" data-tab="wishlist">Búsquedas <span class="badge" id="countWishlist">0</span></button>
+  <button class="tab" data-tab="binder">Binder</button>
+</nav>
+
+<main>
+
+  <!-- ============== COLECCIÓN ============== -->
+  <section class="view active" id="view-collection">
+    <div class="toolbar">
+      <input type="search" id="searchCollection" placeholder="Buscar por nombre, set, número..." />
+      <select id="filterLanguage">
+        <option value="">Todos los idiomas</option>
+      </select>
+      <select id="sortCollection">
+        <option value="recent">Más recientes</option>
+        <option value="name">Nombre A-Z</option>
+        <option value="set">Set</option>
+        <option value="language">Idioma</option>
+      </select>
+    </div>
+
+    <div class="stats" id="collectionStats"></div>
+
+    <div class="grid" id="collectionGrid"></div>
+    <div class="empty-state" id="collectionEmpty" hidden>
+      <p>Tu colección está vacía.</p>
+      <button class="btn primary" data-action="add-first">Agregar primera carta</button>
+    </div>
+  </section>
+
+  <!-- ============== BÚSQUEDAS ============== -->
+  <section class="view" id="view-wishlist">
+    <div class="toolbar">
+      <input type="search" id="searchWishlist" placeholder="Buscar en tus búsquedas..." />
+      <select id="filterLanguageWishlist">
+        <option value="">Todos los idiomas</option>
+      </select>
+    </div>
+    <p class="hint">Click en <b>"Ya la tengo"</b> para mover una carta a tu colección.</p>
+    <div class="grid" id="wishlistGrid"></div>
+    <div class="empty-state" id="wishlistEmpty" hidden>
+      <p>No tenés búsquedas activas.</p>
+      <button class="btn primary" data-action="add-wishlist">Agregar a búsquedas</button>
+    </div>
+  </section>
+
+  <!-- ============== BINDER ============== -->
+  <section class="view" id="view-binder">
+    <div class="binder-toolbar">
+      <div class="binder-config">
+        <label>Binder
+          <select id="binderType">
+            <option value="vaultx480" selected>Vault X 480 (4×3, 20 hojas)</option>
+            <option value="vaultx360">Vault X 360 (3×3, 20 hojas)</option>
+            <option value="vaultx216">Vault X 216 (3×3, 12 hojas)</option>
+            <option value="custom">Custom...</option>
+          </select>
+        </label>
+        <div class="custom-config" id="customConfig" hidden>
+          <label>Cols <input type="number" id="customCols" min="2" max="6" value="4" /></label>
+          <label>Filas <input type="number" id="customRows" min="2" max="6" value="3" /></label>
+          <label>Hojas <input type="number" id="customSheets" min="1" max="60" value="20" /></label>
+        </div>
+        <span class="binder-stats" id="binderStats"></span>
+      </div>
+      <div class="binder-nav">
+        <button class="btn" id="prevPage">◀</button>
+        <span id="pageLabel">Hoja 1 / 20 — Frente</span>
+        <button class="btn" id="nextPage">▶</button>
+      </div>
+    </div>
+
+    <div class="binder-page-wrap">
+      <div class="binder-page" id="binderPage"></div>
+    </div>
+
+    <p class="hint">Click en un slot vacío para asignar una carta. Click en una carta para removerla del binder.</p>
+  </section>
+
+</main>
+
+<!-- ============== MODAL AGREGAR/EDITAR CARTA ============== -->
+<div class="modal" id="cardModal" hidden>
+  <div class="modal-content">
+    <header>
+      <h2 id="modalTitle">Agregar carta</h2>
+      <button class="btn ghost" data-close-modal>✕</button>
+    </header>
+
+    <form id="cardForm">
+      <input type="hidden" id="cardId" />
+
+      <div class="form-row">
+        <div class="form-group flex-2">
+          <label>Nombre *</label>
+          <input type="text" id="cardName" required placeholder="Charizard, Pikachu, etc." />
+        </div>
+        <div class="form-group">
+          <label>Número</label>
+          <input type="text" id="cardNumber" placeholder="4/102" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group flex-2">
+          <label>Set / Expansión</label>
+          <input type="text" id="cardSet" placeholder="Base Set, 151, Surging Sparks..." />
+        </div>
+        <div class="form-group">
+          <label>Rareza</label>
+          <select id="cardRarity">
+            <option value="">--</option>
+            <option>Common</option>
+            <option>Uncommon</option>
+            <option>Rare</option>
+            <option>Holo Rare</option>
+            <option>Reverse Holo</option>
+            <option>Ultra Rare</option>
+            <option>Secret Rare</option>
+            <option>Illustration Rare</option>
+            <option>Special Illustration Rare</option>
+            <option>Hyper Rare</option>
+            <option>Promo</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Idioma *</label>
+          <select id="cardLanguage" required></select>
+        </div>
+        <div class="form-group">
+          <label>Condición</label>
+          <select id="cardCondition">
+            <option>NM</option>
+            <option>LP</option>
+            <option>MP</option>
+            <option>HP</option>
+            <option>DMG</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Cantidad</label>
+          <input type="number" id="cardQuantity" min="1" value="1" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>URL de la imagen</label>
+        <input type="url" id="cardImage" placeholder="https://..." />
+        <small class="hint-inline">Tip: usá <a href="https://images.pokemontcg.io" target="_blank" rel="noopener">images.pokemontcg.io</a> o pegá cualquier URL.</small>
+      </div>
+
+      <div class="form-group">
+        <label>Notas</label>
+        <textarea id="cardNotes" rows="2" placeholder="Comentarios, precio, vendedor..."></textarea>
+      </div>
+
+      <div class="form-row save-targets">
+        <label class="radio">
+          <input type="radio" name="saveTarget" value="collection" checked />
+          <span>Colección</span>
+        </label>
+        <label class="radio">
+          <input type="radio" name="saveTarget" value="wishlist" />
+          <span>Búsquedas</span>
+        </label>
+      </div>
+
+      <footer class="modal-footer">
+        <button type="button" class="btn ghost" data-close-modal>Cancelar</button>
+        <button type="submit" class="btn primary" id="btnSaveCard">Guardar</button>
+      </footer>
+    </form>
+  </div>
+</div>
+
+<!-- ============== MODAL ELEGIR CARTA PARA BINDER ============== -->
+<div class="modal" id="pickerModal" hidden>
+  <div class="modal-content">
+    <header>
+      <h2>Asignar carta al slot</h2>
+      <button class="btn ghost" data-close-picker>✕</button>
+    </header>
+    <input type="search" id="pickerSearch" placeholder="Buscar..." />
+    <div class="grid picker-grid" id="pickerGrid"></div>
+    <p class="hint" id="pickerEmpty" hidden>No hay cartas disponibles. Todas tus cartas ya están asignadas o no tenés ninguna en colección.</p>
+  </div>
+</div>
+
+<!-- ============== TOAST ============== -->
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
